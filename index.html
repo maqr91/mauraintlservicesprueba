@@ -777,33 +777,62 @@ function renderTable(list,type){
   });
 }
 
+<script>
 async function searchTracking(type){
   const input = document.getElementById(`search${type}`);
+  const container = document.getElementById(`results${type}`);
+  const empty = document.getElementById(`empty${type}`);
   const code = (input.value || "").trim().toLowerCase();
+
   if(!code) return;
 
-  let data = [];
+  container.innerHTML = `<div class="result-block"><p><strong>Buscando...</strong></p></div>`;
+  empty.style.display = "none";
+
   const links = Array.isArray(urls[type]) ? urls[type] : [urls[type]];
-  for(const link of links){
-    await new Promise(resolve=>{
-      const sep = link.includes("?") ? "&" : "?";
-      Papa.parse(link + sep + "t=" + Date.now(),{
-        download:true, header:true, skipEmptyLines:true,
-        complete:res=>{ data = data.concat(res.data || []); resolve(); },
-        error:()=>resolve()
+
+  try {
+    const results = await Promise.all(
+      links.map(link => new Promise(resolve => {
+        const sep = link.includes("?") ? "&" : "?";
+
+        Papa.parse(link + sep + "t=" + Date.now(), {
+          download: true,
+          header: true,
+          skipEmptyLines: true,
+          complete: res => resolve(res.data || []),
+          error: () => resolve([])
+        });
+      }))
+    );
+
+    let data = results.flat();
+
+    data = data.map(row => {
+      const cleanRow = {};
+      Object.keys(row || {}).forEach(k => {
+        cleanRow[(k || "").trim()] = typeof row[k] === "string" ? row[k].trim() : row[k];
       });
+      return cleanRow;
     });
+
+    const filtered = data.filter(r => {
+      const track = safe(r,["Tracking","Tracking #","Orden","ORDEN"]).toLowerCase().trim();
+      const name  = safe(r,["Nombre","Cliente","CLIENTE"]).toLowerCase().trim();
+      return track.includes(code) || name.includes(code);
+    });
+
+    renderTable(filtered, type);
+
+  } catch (err) {
+    container.innerHTML = "";
+    empty.textContent = "Hubo un error al buscar.";
+    empty.style.display = "block";
+    console.error("Error buscando en " + type, err);
   }
-
-  const filtered = data.filter(r=>{
-    const track = safe(r,["Tracking","Tracking #","Orden","ORDEN"]).toLowerCase();
-    const name  = safe(r,["Nombre","Cliente"]).toLowerCase();
-    return track.includes(code) || name.includes(code);
-  });
-
-  renderTable(filtered, type);
 }
-
+</script>
+  
 ["Maritimo","Aereo","Compra"].forEach(t=>{
   document.getElementById(`search${t}`).addEventListener("keydown", e=>{
     if(e.key === "Enter") searchTracking(t);
